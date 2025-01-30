@@ -1,0 +1,204 @@
+import pandas as pd
+import numpy as np
+
+# File paths
+ramp_file = r"C:\Users\mehfu\OneDrive\Master Thesis\database\Ramp Data\ramp.xlsx"
+additional_ramp_file = r"C:\Users\mehfu\OneDrive\Master Thesis\database\Nbg agg1min Mnch se Nbg\H1-4 merged agg1min.xlsx"
+
+# Parameters
+vf = 120  # Free-flow speed in km/h
+delta_t = 30 / 3600  # Time step in hours (30 seconds)
+num_cells = 18
+num_timesteps = int(120 * 60 / 30)  # Total timesteps for 2 hours (14:00 to 16:00)
+
+# Original flow values (vehicles per minute)
+original_flows = [
+    2700, 2340, 2640, 2460, 3060, 2460, 2880, 1920, 3660, 3180, 2880, 1980, 2520, 2160,
+    2520, 3720, 1980, 2220, 2820, 3120, 3060, 3420, 3060, 2340, 2040, 2640, 3480, 2940,
+    2640, 3300, 2460, 3300, 2700, 1980, 2580, 2640, 3180, 2160, 2880, 2520, 3660, 4020,
+    2340, 3600, 2880, 2940, 3540, 3240, 2700, 3480, 3480, 3900, 3120, 3240, 2280, 2820,
+    3300, 2880, 3720, 2760, 2340, 2520, 2820, 3360, 3420, 4320, 4140, 4200, 2460, 3720,
+    3840, 3300, 2520, 3540, 2040, 3480, 2520, 3420, 2520, 2820, 4200, 3480, 4020, 2940,
+    3240, 4860, 3720, 3240, 4500, 3840, 2700, 3180, 3900, 3480, 3360, 4320, 3840, 3480,
+    3420, 4680, 3360, 3060, 3300, 2760, 3660, 3600, 2880, 3120, 3780, 3900, 2940, 3900,
+    3120, 3240, 2880, 4320, 3960, 3480, 3000, 4140
+]
+
+
+# Adjust the original flows to repeat each value for two consecutive timesteps
+adjusted_flows = [value for value in original_flows for _ in range(2)]
+
+# Check the length of adjusted flows
+if len(adjusted_flows) != num_timesteps:
+    raise ValueError(f"Adjusted flows length {len(adjusted_flows)} does not match expected timesteps {num_timesteps}.")
+
+# Cell lengths and initial densities
+cell_lengths = [1.575, 1.115, 1.450, 1.650, 1.370, 1.425, 1.511, 1.664, 1.150,
+                1.285, 2.055, 1.0, 1.945, 1.585, 1.063, 1.492, 1.855, 1.430]
+initial_density = [28.125, 32.99, 37.01, 24.70, 32.50, 32.18, 38.74, 33.76,
+                   29.08, 25.72, 15.41, 40, 33.63, 25.34, 23.17, 13.24, 30.16, 27.91]
+
+# Initialize arrays for density, flow, supply, and demand
+density = np.zeros((num_cells, num_timesteps))
+density[:, 0] = initial_density
+flow = np.zeros((num_cells + 1, num_timesteps))  # Includes an extra entry for boundary flow
+supply = np.zeros((num_cells, num_timesteps))
+demand = np.zeros((num_cells, num_timesteps))
+
+# Use the adjusted flows as the input for the first cell's inflow
+flow[0, :num_timesteps] = adjusted_flows
+
+# Ramp inflows and outflows
+ramp_in_cells = {14: "PfafEnt", 8: "AlhEnt"}
+ramp_out_cells = {14: "PfafExit", 8: "AlhExit"}
+additional_ramp_in = {1: 509515}
+additional_ramp_out = {1: 511090}
+
+# Read ramp data
+ramp_data = pd.ExcelFile(ramp_file)
+filtered_ramp_data = {
+    sheet_name: ramp_data.parse(sheet_name).query(
+        "t_start >= '2024-04-16 14:50:00' and t_start <= '2024-04-16 16:49:00'")
+    for sheet_name in ramp_data.sheet_names
+}
+
+# Read additional ramp data
+additional_ramp_data = pd.read_excel(additional_ramp_file, sheet_name="H1")
+filtered_additional_ramp_data = additional_ramp_data.query(
+    "t_start >= '2024-04-16 14:50:00' and t_start <= '2024-04-16 16:49:00'"
+)
+
+# Extend additional ramp flow values to repeat for two consecutive timesteps
+filtered_additional_ramp_data = pd.concat(
+    [filtered_additional_ramp_data], ignore_index=True
+)
+
+# Supply calculation helper
+def calculate_supply(cell, current_density, time_index):
+    if time_index < num_timesteps // 2:  # First 120 timesteps
+        capacity = 5460
+        critical_density = 45.5
+    else:  # Last 120 timesteps
+        if cell > 14:
+            capacity = 5460
+            critical_density = 45.5
+        else:
+            capacity = 6120
+            critical_density = 51
+
+    if current_density > critical_density:
+        if time_index < num_timesteps // 2:
+            q = capacity - capacity * (current_density - critical_density) / 454.5
+        else:
+            if cell > 14:
+                q = capacity - capacity * (current_density - critical_density) / 454.5
+            else:
+                q = capacity - capacity * (current_density - critical_density) / 615.67
+        return min(capacity, previous_capacity, q)
+    else:
+        return min(capacity, previous_capacity)
+
+# Demand calculation helper
+def calculate_demand(current_density, cell_index, time_index):
+    if time_index < num_timesteps // 2:
+        capacity = 5460
+        critical_density = 45.5
+    else:
+        if cell_index > 14:
+            capacity = 5460
+            critical_density = 45.5
+        else:
+            capacity = 6120
+            critical_density = 51
+
+    if current_density > critical_density:
+        return capacity
+    else:
+        return current_density * vf
+
+# Main simulation loop for timesteps 0–238
+for t in range(num_timesteps - 1):  # Exclude timestep 239
+    for i in range(num_cells):
+        # Calculate supply and demand
+        current_density = density[i, t]
+        previous_capacity = float('inf') if i == 0 else supply[i - 1, t]
+        supply[i, t] = calculate_supply(i, current_density, t)
+        demand[i, t] = calculate_demand(current_density, i, t)
+
+    # Calculate flow
+    for i in range(num_cells + 1):
+        if i == 0:
+            flow[i, t] = min(flow[0, t], supply[i, t])
+        elif i == num_cells:
+            flow[i, t] = min(demand[i - 1, t], float('inf'))
+        else:
+            flow[i, t] = min(demand[i - 1, t], supply[i, t])
+
+    # Update densities for the next timestep (t + 1)
+    for i in range(num_cells):
+        inflow = flow[i, t]
+        outflow = flow[i + 1, t]
+        ramp_in = 0
+        ramp_out = 0
+
+        # Ramp inflows
+        if (i + 1) in ramp_in_cells:
+            ramp_in += filtered_ramp_data[ramp_in_cells[i + 1]].iloc[
+                (t // 2) % len(filtered_ramp_data[ramp_in_cells[i + 1]])
+            ]["q_kfz_h"]
+
+        if (i + 1) in additional_ramp_in:
+            matching_rows_in = filtered_additional_ramp_data.loc[
+                filtered_additional_ramp_data["Distance"] == additional_ramp_in[i + 1]
+            ]
+            if not matching_rows_in.empty:
+                ramp_in += matching_rows_in["q_kfz_h"].iloc[
+                    (t // 2) % len(matching_rows_in)
+                ]
+
+        # Ramp outflows
+        if (i + 1) in ramp_out_cells:
+            ramp_out += filtered_ramp_data[ramp_out_cells[i + 1]].iloc[
+                (t // 2) % len(filtered_ramp_data[ramp_out_cells[i + 1]])
+            ]["q_kfz_h"]
+
+        if (i + 1) in additional_ramp_out:
+            matching_rows_out = filtered_additional_ramp_data.loc[
+                filtered_additional_ramp_data["Distance"] == additional_ramp_out[i + 1]
+            ]
+            if not matching_rows_out.empty:
+                ramp_out += matching_rows_out["q_kfz_h"].iloc[
+                    (t // 2) % len(matching_rows_out)
+                ]
+
+        # Update density
+        density[i, t + 1] = density[i, t] + (delta_t / cell_lengths[i]) * (inflow - outflow + ramp_in - ramp_out)
+        density[i, t + 1] = max(0, density[i, t + 1])  # Ensure non-negative density
+
+# Separate handling for timestep 239
+t = num_timesteps - 1  # Last timestep (239)
+for i in range(num_cells):
+    # Calculate supply and demand
+    current_density = density[i, t]
+    previous_capacity = float('inf') if i == 0 else supply[i - 1, t]
+    supply[i, t] = calculate_supply(i, current_density, t)
+    demand[i, t] = calculate_demand(current_density, i, t)
+
+# Calculate flow for timestep 239 (no density update)
+for i in range(num_cells + 1):
+    if i == 0:
+        flow[i, t] = min(flow[0, t], supply[i, t])
+    elif i == num_cells:
+        flow[i, t] = min(demand[i - 1, t], float('inf'))
+    else:
+        flow[i, t] = min(demand[i - 1, t], supply[i, t])
+
+
+# Save results to Excel
+with pd.ExcelWriter("CTMw5.xlsx") as writer:
+    pd.DataFrame(density).to_excel(writer, sheet_name="Density")
+    pd.DataFrame(flow).to_excel(writer, sheet_name="Flow")
+    pd.DataFrame(supply).to_excel(writer, sheet_name="Supply")
+    pd.DataFrame(demand).to_excel(writer, sheet_name="Demand")
+
+print("Simulation complete. Results saved.")
