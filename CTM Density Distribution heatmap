@@ -1,0 +1,56 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# File path and sheet name
+file_path = r"C:\Users\mehfu\PycharmProjects\Master-Thesis\CTMw5.xlsx"
+sheet_name = "Density"
+
+# Load the Density sheet from the Excel file
+density_df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
+
+# Extract the density values from rows 2 to 19 and columns B to IG (Excel indices)
+density_values = density_df.iloc[1:19, 1:].values  # Rows 2-19 (ignoring headers), Columns B-IG
+
+# Extract the cell order from Column A (rows 2 to 19, Excel indices)
+cell_labels = density_df.iloc[1:19, 0].values  # Column A
+
+# Sort rows based on the values in Column A (to maintain the desired order)
+sorted_indices = np.argsort(cell_labels)
+sorted_density_values = density_values[sorted_indices, :]
+sorted_cell_labels = [f"Cell {int(label)}" for label in cell_labels[sorted_indices]]
+
+# Create labels for the x-axis (Timesteps)
+x_labels = [f"{i}" for i in range(density_values.shape[1])]  # Timesteps 0-239
+
+# Plot heatmap
+plt.figure(figsize=(12, 10))
+sns.heatmap(
+    sorted_density_values,
+    cmap="viridis",
+    cbar_kws={'label': 'Density (veh/km)'},
+    xticklabels=20,  # Show every 20th timestep for clarity
+    yticklabels=sorted_cell_labels,  # Maintain the order from top to bottom
+)
+
+# Customize axis labels and title
+# Ensure the last timestep (239) is included
+xticks = list(range(0, len(x_labels), 20))  # Every 20th timestep
+if 239 not in xticks:
+    xticks.append(239)  # Add 239 explicitly
+
+plt.xticks(
+    ticks=xticks,
+    labels=[x_labels[t] for t in xticks],  # Use corresponding labels for ticks
+    rotation=45  # Rotate for better readability
+)
+plt.xlabel("Timesteps", fontsize=11)
+plt.ylabel("Cells", fontsize=11)
+plt.title("Density Distribution Heatmap (CTM)", fontsize=11)
+
+# Save and display the heatmap
+plt.tight_layout()
+plt.savefig("Density_Heatmap_Cell_vs_Timestep_v18_sorted.png", dpi=300)
+plt.show()
+
