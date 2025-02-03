@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 
 # File paths
-ramp_file = r"C:\Users\mehfu\OneDrive\Master Thesis\database\Ramp Data\ramp.xlsx"
-additional_ramp_file = r"C:\Users\mehfu\OneDrive\Master Thesis\database\Nbg agg1min Mnch se Nbg\H1-4 merged agg1min.xlsx"
+ramp_file = r"C:\Users\mehfu\OneDrive\Master Thesis\database\Ramp Data\Ramp - 3 Junctions.xlsx"
+additional_ramp_file = r"C:\Users\mehfu\OneDrive\Master Thesis\database\Nbg agg1min Mnch se Nbg\Munich to Nuremberg each lane.xlsx"
 
 # Parameters
 vf = 120  # Free-flow speed in km/h
